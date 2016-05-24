@@ -3,13 +3,12 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-# todo: add multithreading for faster file scanning
-
 
 class Searcher:
     def __init__(self):
         self.thread_count = 0
         self.all_results = []
+        self.thread_count_before = self.thread_count
         # self.executor = ThreadPoolExecutor(max_workers=10)
 
     def search_for_pattern_async(self, directory, pattern):
@@ -49,12 +48,17 @@ class Searcher:
         thread.search_in_file_async(file_path, pattern, self._search_callback)
 
     def _wait_for_results(self):
-        print('waiting for all threads ({0!s}) to finish.'
-              .format(self.thread_count))
         while self.thread_count > 0:
-            print('{0!s} thread(s) pending.')
-
+            self._update_terminal()
         return self.all_results
+
+    def _update_terminal(self):
+        if (self.thread_count is not self.thread_count_before):
+            # nt => Windows (New Technologie)
+            os.system('cls' if os.name == 'nt' else 'clear')
+            print('waiting for {0!s} thread(s) to finish.'
+                  .format(self.thread_count))
+            self.thread_count_before = self.thread_count
 
 
 class SearchThread:
