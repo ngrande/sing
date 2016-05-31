@@ -66,6 +66,9 @@ class SearchThread:
         self.search_callback = None
         self.threadpool_exec = threadpool_exec
 
+# todo: if file is too big rip it in parts and create a search thread foreach
+# part -> improve search performance for large files
+# for this use file.seek(start) and file.tell()
     def _search_in_file(self, file_path, pattern):
         temp_result = []
         for line in open(file_path, mode='r', errors='replace'):
