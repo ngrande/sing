@@ -5,18 +5,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class Searcher:
-    def __init__(self):
+    def __init__(self, max_concurr_threads=10):
         self.thread_count = 0
         self.all_results = []
         self.thread_count_before = self.thread_count
-        # self.executor = ThreadPoolExecutor(max_workers=10)
+        self.executor = ThreadPoolExecutor(max_workers=max_concurr_threads)
 
     def search_for_pattern_async(self, directory, pattern):
         """ search all files in the directory of this object for the pattern.
-        Returns list of matching strings (lines in the file). If live is
-        set to true it will directly print the output to the console. """
-        self.thread_count = 0
-        self.all_results = []
+        """
         print('search in directory {0!s} started'.format(directory))
 
         # if directory is actually only a single file
@@ -29,12 +26,13 @@ class Searcher:
             if os.path.isdir(temp_file_path):
                 # if file is a directory -> recursive call to itself
 
-                # ATTENTION! Recursive call is not yet threaded
+                # ATTENTION not yet threaded! will wait and the end of it's
+                # call for the results
                 self.search_for_pattern_async(temp_file_path, pattern)
             else:
                 self._start_search_thread(temp_file_path, pattern)
 
-        return self._wait_for_results()
+        # return self._wait_for_results()
 
     def _search_callback(self, result):
         # print('search callback invoked')
@@ -43,11 +41,11 @@ class Searcher:
 
     def _start_search_thread(self, file_path, pattern):
         # print('starting search thread')
-        thread = SearchThread()
+        thread = SearchThread(self.executor)
         self.thread_count += 1
         thread.search_in_file_async(file_path, pattern, self._search_callback)
 
-    def _wait_for_results(self):
+    def wait_for_results(self):
         while self.thread_count > 0:
             self._update_terminal()
         return self.all_results
@@ -62,9 +60,10 @@ class Searcher:
 
 
 class SearchThread:
-    def __init__(self):
+    def __init__(self, threadpool_exec):
         self.search_thread = None
         self.search_callback = None
+        self.threadpool_exec = threadpool_exec
 
     def _search_in_file(self, file_path, pattern):
         temp_result = []
@@ -79,8 +78,9 @@ class SearchThread:
 
     def search_in_file_async(self, file_path, pattern, search_callback):
         self.search_callback = search_callback
-        self.search_thread = threading.Thread(target=self._search_in_file,
-                                              args=(file_path, pattern))
-        self.search_thread.start()
+        # self.search_thread = threading.Thread(target=self._search_in_file,
+        #                                      args=(file_path, pattern))
+        # self.search_thread.start()
+        self.threadpool_exec.submit(self._search_in_file, file_path, pattern)
         # print('searchThread started')
         # return self.search_thread
