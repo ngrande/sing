@@ -19,6 +19,7 @@ class Searcher:
         # if directory is actually only a single file
         if os.path.isfile(directory):
             self._start_search_thread(directory, pattern)
+            return
 
         # else scan all files in the directory + subdirectories
         for file_name in os.listdir(directory):
