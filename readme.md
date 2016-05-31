@@ -1,5 +1,5 @@
 # Sing
-acronym for __S__ing __i__s __n__ot __g__ood
+acronym for **S**ing **i**s **n**ot **g**ood
 
 Sing is an easy to use search tool. You can search all files in a directory and its subdirectories using regular expressions.
 
