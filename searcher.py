@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 # TODO: shutdown the executor (or using the 'with' keyword properly)
 
+
 class Searcher:
     def __init__(self, max_concurr_threads=10):
         self.thread_count = 0
@@ -60,7 +61,7 @@ class SearchThread:
         self.search_thread = None
         self.search_callback = None
         self.threadpool_exec = threadpool_exec
-        self.max_file_junk_size = 5242880  # bytes => 5 MiB
+        self.max_file_junk_size = 8192 * 1024  # bytes * 1024 = KiBytes
 
     def _search_in_file(self, file_path, pattern, start_pos, end_pos):
         temp_result = []
@@ -69,7 +70,7 @@ class SearchThread:
             # (checks if this pos is the beginning of a new line)
             is_new_line = start_pos is 0
             if start_pos > 0:
-                file.seek(start_pos - 2)
+                file.seek(start_pos - 1)
             if not is_new_line and file.read(1) is '\n':
                 is_new_line = True
 
@@ -77,12 +78,12 @@ class SearchThread:
             file.seek(start_pos)
 
             if not is_new_line:
-                file.readline()  # throw away the line
+                line = file.readline()  # throw away the line
 
             curr_pos = 0
             while curr_pos < end_pos:
-                curr_pos = file.tell()
                 line = file.readline()
+                curr_pos = file.tell()
                 match = re.search(pattern, line)
                 if (match is not None):
                     temp_result.append(line)
@@ -100,8 +101,10 @@ class SearchThread:
     def _calc_positions(self, file_path):
         size = os.path.getsize(file_path)
         if size >= self.max_file_junk_size:
-            div = int(size / self.max_file_junk_size)  # how many times the max_file_junk_size fits into the file size
-            rest = size % self.max_file_junk_size  # the rest which does not fit anymore
+            # how many times the max_file_junk_size fits into the file size
+            div = int(size / self.max_file_junk_size)
+            # the rest which does not fit anymore
+            rest = size % self.max_file_junk_size
             results = []
             for i in range(0, div):
                 temp_pos = i * self.max_file_junk_size
