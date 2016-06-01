@@ -3,6 +3,7 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+# TODO: shutdown the executor (or using the 'with' keyword properly)
 
 class Searcher:
     def __init__(self, max_concurr_threads=10):
@@ -42,6 +43,7 @@ class Searcher:
     def wait_for_results(self):
         while self.thread_count > 0:
             self._update_terminal()
+        self.executor.shutdown()
         return self.all_results
 
     def _update_terminal(self):
@@ -62,17 +64,38 @@ class SearchThread:
 
     def _search_in_file(self, file_path, pattern, start_pos, end_pos):
         temp_result = []
-        for line in open(file_path, mode='r', errors='replace'):
-            match = re.search(pattern, line)
-            if (match is not None):
-                temp_result.append(line)
+        with open(file_path, mode='r', errors='replace') as file:
+            # check if this line is complete by looking for the \n
+            # (checks if this pos is the beginning of a new line)
+            is_new_line = start_pos is 0
+            if start_pos > 0:
+                file.seek(start_pos - 2)
+            if not is_new_line and file.read(1) is '\n':
+                is_new_line = True
+
+            # initial set the start pos
+            file.seek(start_pos)
+
+            if not is_new_line:
+                file.readline()  # throw away the line
+
+            curr_pos = 0
+            while curr_pos < end_pos:
+                curr_pos = file.tell()
+                line = file.readline()
+                match = re.search(pattern, line)
+                if (match is not None):
+                    temp_result.append(line)
 
         if self.search_callback is not None:
             self.search_callback(temp_result)
 
     def search_in_file_async(self, file_path, pattern, search_callback):
         self.search_callback = search_callback
-        self.threadpool_exec.submit(self._search_in_file, file_path, pattern)
+        positions = self._calc_positions(file_path)
+        for pos in positions:
+            self.threadpool_exec.submit(self._search_in_file, file_path,
+                                        pattern, pos[0], pos[1])
 
     def _calc_positions(self, file_path):
         size = os.path.getsize(file_path)
@@ -82,9 +105,10 @@ class SearchThread:
             results = []
             for i in range(0, div):
                 temp_pos = i * self.max_file_junk_size
-                # add a -1?
-                results.append((temp_pos, temp_pos + self.max_file_junk_size))
-            # add the rest
-            last = results[len(results) - 1]
-            results.append((last, last+rest))
-            # not done yet...
+                # add a -1 => otherwise it will begin where the prev ended
+                results.append([temp_pos, temp_pos +
+                               (self.max_file_junk_size - 1)])
+            # add the rest + 1 because last has the -1
+            last = results[len(results) - 1][1]
+            results.append([last, last + rest + 1])
+        return results
