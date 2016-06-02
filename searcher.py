@@ -40,15 +40,18 @@ class Searcher:
 
     def wait_for_results(self):
         self.all_results = []
-        count_left = len(self.file_searchers)
+        self.count_left = len(self.file_searchers)
         with ThreadPoolExecutor(max_workers=self.max_concurr_threads) as executor:
             for searcher in self.file_searchers:
                 executor.submit(self.do_it, searcher)
 
-        return all_results
+        return self.all_results
 
     def do_it(self, searcher):
         self.all_results.extend(searcher.search_in_file(self.max_concurr_threads))
+        self.count_left -= 1
+        # print(len(self.all_results))
+        self._update_terminal(self.count_left)
 
     def _update_terminal(self, count_left):
         # nt => Windows (New Technologie)
@@ -65,13 +68,15 @@ class FileSearcher:
 
     def _search_part_in_file(self, start_pos, end_pos):
         temp_result = []
-        with open(self.file_path, mode='r', errors='replace') as file:
+        # buffer size + 1 => because it seeks for the beginning of the line
+        buffer_size = end_pos - start_pos + 1
+        with open(self.file_path, mode='rb') as file:
             # check if this line is complete by looking for the \n
             # (checks if this pos is the beginning of a new line)
             is_new_line = start_pos is 0
             if start_pos > 0:
                 file.seek(start_pos - 1)
-            if not is_new_line and file.read(1) is '\n':
+            if not is_new_line and file.read(1) is b'\n':
                 is_new_line = True
 
             # initial set the start pos
@@ -82,15 +87,17 @@ class FileSearcher:
 
             curr_pos = 0
             while curr_pos < end_pos:
-                line = file.readline()
+                bline = file.readline()
                 curr_pos = file.tell()
-                match = re.search(self.pattern, line)
+                # binary regex
+                match = re.search(self.pattern.encode('utf-8'), bline)
                 if (match is not None):
-                    temp_result.append(line)
+                    temp_result.append(bline)
 
         self.file_results.extend(temp_result)
 
     def search_in_file(self, max_concurr_threads):
+        self.file_results = []
         file_size = os.path.getsize(self.file_path)
         positions = self._calc_positions(file_size, max_concurr_threads)
 

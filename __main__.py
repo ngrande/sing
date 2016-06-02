@@ -33,6 +33,6 @@ utils.print_elapsed_time(start_time=start_time, end_time=end_time)
 print('#### found {0!s} matching line(s) ####'.format(len(matching_lines)))
 if len(matching_lines) > 0:
     print('writing matching lines into output file... (may take a second)')
-    with open(args.output_file, 'w+') as file:
+    with open(args.output_file, 'w+b') as file:
         file.writelines(matching_lines)
 print('done!')
