@@ -42,16 +42,17 @@ class Searcher:
     def wait_for_results(self):
         self.all_results = []
         self.count_left = len(self.file_searchers)
-        with ThreadPoolExecutor(max_workers=self.max_concurr_threads) as executor:
+        with ThreadPoolExecutor(max_workers=self.
+                                max_concurr_threads) as executor:
             for searcher in self.file_searchers:
                 executor.submit(self.do_it, searcher)
-            # self.do_it(searcher)
 
         return self.all_results
 
     def do_it(self, searcher):
         self._update_terminal(self.count_left)
-        self.all_results.extend(searcher.search_in_file(self.max_concurr_threads))
+        self.all_results.extend(searcher.
+                                search_in_file(self.max_concurr_threads))
         self.count_left -= 1
         # print(len(self.all_results))
         self._update_terminal(self.count_left)
@@ -66,14 +67,19 @@ class Searcher:
 class FileSearcher:
     def __init__(self, file_path, pattern):
         self.file_path = file_path
-        self.pattern = pattern
+        self.pattern = pattern.encode('utf-8')
         self.file_results = []
+        # junk_size is a multiple of the default buffer size to ensure that it
+        # is worth spawning multiple threads for a single file
+        self.junk_size = io.DEFAULT_BUFFER_SIZE * 2048
 
     def _search_part_in_file(self, start_pos, end_pos):
         temp_result = []
-        # buffer size + 1 => because it seeks for the beginning of the line
-        buffer_size = end_pos - start_pos + 1
-        with open(self.file_path, mode='rb') as file:
+        # buffer size = end_pos because so everything that is needed will be
+        # read at once
+        buffer_size = end_pos  # (end_pos - start_pos) * 2
+        with open(self.file_path, mode='rb',
+                  buffering=self.junk_size + 1) as file:
             # check if this line is complete by looking for the \n
             # (checks if this pos is the beginning of a new line)
             is_new_line = start_pos is 0
@@ -85,15 +91,19 @@ class FileSearcher:
             # initial set the start pos
             file.seek(start_pos)
 
-            if not is_new_line:
-                line = file.readline()  # throw away the line
+            lines = file.readlines(end_pos - start_pos)
+            if not is_new_line and len(lines) > 0:
+                # throw away the first if it is not the beginning of a new line
+                # line = file.readline()
+                del lines[0]
 
-            curr_pos = 0
-            while curr_pos < end_pos:
-                bline = file.readline()
-                curr_pos = file.tell()
+            # curr_pos = 0
+            # while curr_pos < end_pos:
+            for bline in lines:
+                # bline = file.readline()
+                # curr_pos = file.tell()
                 # binary regex
-                match = re.search(self.pattern.encode('utf-8'), bline)
+                match = re.search(self.pattern, bline)
                 if (match is not None):
                     temp_result.append(bline)
 
@@ -110,38 +120,22 @@ class FileSearcher:
 
         return self.file_results
 
-    # def _calc_positions(self, file_size, max_threads):
-    #     results = []
-    #     junk_size = round(file_size / max_threads + .5)
-    #     if file_size >= junk_size:
-    #         # how many times the max_file_junk_size fits into the file size
-    #         div = int(file_size / junk_size)
-    #         # the rest which does not fit anymore
-    #         rest = file_size % junk_size
-    #         for i in range(0, div):
-    #             temp_pos = i * junk_size
-    #             # add a -1 => otherwise it will begin where the prev ended
-    #             results.append([temp_pos, temp_pos +
-    #                            (junk_size - 1)])
-    #         # add the rest + 1 because last has the -1
-    #         last = results[len(results) - 1][1]
-    #         results.append([last, last + rest + 1])
-    #     return results
-
     def _calc_positions(self, file_size):
         results = []
-        junk_size = io.DEFAULT_BUFFER_SIZE
-        if file_size >= junk_size:
+
+        if file_size >= self.junk_size:
             # how many times the junk_size fits into the file size
-            div = int(file_size / junk_size)
+            div = int(file_size / self.junk_size)
             # the rest which does not fit anymore
-            rest = file_size % junk_size
+            rest = file_size % self.junk_size
             for i in range(0, div):
-                temp_pos = i * junk_size
+                temp_pos = i * self.junk_size
                 # add a -1 => otherwise it will begin where the prev ended
                 results.append([temp_pos, temp_pos +
-                               (junk_size - 1)])
+                               (self.junk_size - 1)])
             # add the rest + 1 because last has the -1
             last = results[len(results) - 1][1]
             results.append([last, last + rest + 1])
+        else:
+            results.append([0, file_size])
         return results
