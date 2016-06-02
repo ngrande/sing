@@ -1,90 +1,143 @@
 import os
 import re
 import threading
+import io
 from concurrent.futures import ThreadPoolExecutor
+
+# TODO: shutdown the executor (or using the 'with' keyword properly)
 
 
 class Searcher:
     def __init__(self, max_concurr_threads=10):
-        self.thread_count = 0
-        self.all_results = []
-        self.thread_count_before = self.thread_count
-        self.executor = ThreadPoolExecutor(max_workers=max_concurr_threads)
+        self.max_concurr_threads = max_concurr_threads
 
-    def search_for_pattern_async(self, directory, pattern):
-        """ search all files in the directory of this object for the pattern.
-        """
-        print('search in directory {0!s} started'.format(directory))
-
+    def _collect_files_to_scan(self, directory, pattern):
+        """ scan the whole directory + subdirectories for fiels """
+        file_searchers = []
         # if directory is actually only a single file
         if os.path.isfile(directory):
-            self._start_search_thread(directory, pattern)
-            return
+            file_searchers.append(FileSearcher(directory, pattern))
+            return file_searchers
 
         # else scan all files in the directory + subdirectories
         for file_name in os.listdir(directory):
             temp_file_path = directory + '/' + file_name
             if os.path.isdir(temp_file_path):
                 # if file is a directory -> recursive call to itself
-
-                # ATTENTION not yet threaded! will wait and the end of it's
-                # call for the results
-                self.search_for_pattern_async(temp_file_path, pattern)
+                file_searchers.extend(self._collect_files_to_scan(
+                    temp_file_path, pattern))
             else:
-                self._start_search_thread(temp_file_path, pattern)
+                file_searchers.append(FileSearcher(temp_file_path, pattern))
 
-        # return self._wait_for_results()
+        return file_searchers
 
-    def _search_callback(self, result):
-        # print('search callback invoked')
-        self.thread_count -= 1
-        self.all_results.extend(result)
+    def search_for_pattern(self, directory, pattern):
+        """ starts the search for all files in the directory for the pattern
+        - uses a thread pool (as set in the constructor) """
+        file_searchers = self._collect_files_to_scan(directory, pattern)
+        self.all_results = []
+        print('search started...')
+        # self.count_left = len(self.file_searchers)
+        with ThreadPoolExecutor(max_workers=self.
+                                max_concurr_threads) as executor:
+            for searcher in file_searchers:
+                executor.submit(self._search_wrapper, searcher)
 
-    def _start_search_thread(self, file_path, pattern):
-        # print('starting search thread')
-        thread = SearchThread(self.executor)
-        self.thread_count += 1
-        thread.search_in_file_async(file_path, pattern, self._search_callback)
-
-    def wait_for_results(self):
-        while self.thread_count > 0:
-            self._update_terminal()
         return self.all_results
 
-    def _update_terminal(self):
-        if (self.thread_count is not self.thread_count_before):
-            # nt => Windows (New Technologie)
-            os.system('cls' if os.name == 'nt' else 'clear')
-            print('waiting for {0!s} thread(s) to finish.'
-                  .format(self.thread_count))
-            self.thread_count_before = self.thread_count
+    def _search_wrapper(self, searcher):
+        """ wraps the FileSearcher search call for the thread-pool """
+        # self._update_terminal(self.count_left)
+        self.all_results.extend(searcher.search_in_file())
+        # self.count_left -= 1
+        # print(len(self.all_results))
+        # self._update_terminal(self.count_left)
+
+    def _update_terminal(self, count_left):
+        # nt => Windows (New Technologie)
+        os.system('cls' if os.name == 'nt' else 'clear')
+        print('waiting for {0!s} filescan(s) to finish.'
+              .format(count_left))
 
 
-class SearchThread:
-    def __init__(self, threadpool_exec):
-        self.search_thread = None
-        self.search_callback = None
-        self.threadpool_exec = threadpool_exec
+class FileSearcher:
+    """ used to search in a single file """
+    def __init__(self, file_path, pattern):
+        self.file_path = file_path
+        self.pattern = pattern.encode('utf-8')
+        self.file_results = []
+        # junk_size is a multiple of the default buffer size to ensure that it
+        # is worth spawning multiple threads for a single file
+        self.junk_size = io.DEFAULT_BUFFER_SIZE * 2048
 
-# todo: if file is too big rip it in parts and create a search thread foreach
-# part -> improve search performance for large files
-# for this use file.seek(start) and file.tell()
-    def _search_in_file(self, file_path, pattern):
+    def _search_part_in_file(self, start_pos, end_pos):
+        """ searches a regex pattern in a specified part of a file """
         temp_result = []
-        for line in open(file_path, mode='r', errors='replace'):
-            match = re.search(pattern, line)
-            if (match is not None):
-                temp_result.append(line)
+        # buffer size = end_pos because so everything that is needed will be
+        # read at once
+        buffer_size = end_pos  # (end_pos - start_pos) * 2
+        with open(self.file_path, mode='rb',
+                  buffering=self.junk_size + 1) as file:
+            # check if this line is complete by looking for the \n
+            # (checks if this pos is the beginning of a new line)
+            is_new_line = start_pos is 0
+            if start_pos > 0:
+                file.seek(start_pos - 1)
+            if not is_new_line and file.read(1) is b'\n':
+                is_new_line = True
 
-        if self.search_callback is not None:
-            # print('file search finished - invoking callback')
-            self.search_callback(temp_result)
+            # initial set the start pos
+            file.seek(start_pos)
 
-    def search_in_file_async(self, file_path, pattern, search_callback):
-        self.search_callback = search_callback
-        # self.search_thread = threading.Thread(target=self._search_in_file,
-        #                                      args=(file_path, pattern))
-        # self.search_thread.start()
-        self.threadpool_exec.submit(self._search_in_file, file_path, pattern)
-        # print('searchThread started')
-        # return self.search_thread
+            lines = file.readlines(end_pos - start_pos)
+            if not is_new_line and len(lines) > 0:
+                # throw away the first if it is not the beginning of a new line
+                # line = file.readline()
+                del lines[0]
+
+            # curr_pos = 0
+            # while curr_pos < end_pos:
+            for bline in lines:
+                # bline = file.readline()
+                # curr_pos = file.tell()
+                # binary regex
+                match = re.search(self.pattern, bline)
+                if (match is not None):
+                    temp_result.append(bline)
+
+        self.file_results.extend(temp_result)
+
+    def search_in_file(self):
+        """ searches regex pattern in complete file - will create multiple
+            threads (if necessary) to search simultanously in a single file """
+        self.file_results = []
+        file_size = os.path.getsize(self.file_path)
+        positions = self._calc_positions(file_size)  # , max_concurr_threads)
+
+        with ThreadPoolExecutor() as executor:
+            for pos in positions:
+                executor.submit(self._search_part_in_file, pos[0], pos[1])
+
+        return self.file_results
+
+    def _calc_positions(self, file_size):
+        """ calculate the position pairs (start + end) for the part to search
+            in the file """
+        results = []
+
+        if file_size >= self.junk_size:
+            # how many times the junk_size fits into the file size
+            div = int(file_size / self.junk_size)
+            # the rest which does not fit anymore
+            rest = file_size % self.junk_size
+            for i in range(0, div):
+                temp_pos = i * self.junk_size
+                # add a -1 => otherwise it will begin where the prev ended
+                results.append([temp_pos, temp_pos +
+                               (self.junk_size - 1)])
+            # add the rest + 1 because last has the -1
+            last = results[len(results) - 1][1]
+            results.append([last, last + rest + 1])
+        else:
+            results.append([0, file_size])
+        return results
