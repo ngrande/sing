@@ -1,6 +1,7 @@
 import os
 import re
 import threading
+import io
 from concurrent.futures import ThreadPoolExecutor
 
 # TODO: shutdown the executor (or using the 'with' keyword properly)
@@ -44,10 +45,12 @@ class Searcher:
         with ThreadPoolExecutor(max_workers=self.max_concurr_threads) as executor:
             for searcher in self.file_searchers:
                 executor.submit(self.do_it, searcher)
+            # self.do_it(searcher)
 
         return self.all_results
 
     def do_it(self, searcher):
+        self._update_terminal(self.count_left)
         self.all_results.extend(searcher.search_in_file(self.max_concurr_threads))
         self.count_left -= 1
         # print(len(self.all_results))
@@ -99,19 +102,37 @@ class FileSearcher:
     def search_in_file(self, max_concurr_threads):
         self.file_results = []
         file_size = os.path.getsize(self.file_path)
-        positions = self._calc_positions(file_size, max_concurr_threads)
+        positions = self._calc_positions(file_size)  # , max_concurr_threads)
 
-        with ThreadPoolExecutor(max_workers=max_concurr_threads) as executor:
+        with ThreadPoolExecutor() as executor:
             for pos in positions:
                 executor.submit(self._search_part_in_file, pos[0], pos[1])
 
         return self.file_results
 
-    def _calc_positions(self, file_size, max_threads):
+    # def _calc_positions(self, file_size, max_threads):
+    #     results = []
+    #     junk_size = round(file_size / max_threads + .5)
+    #     if file_size >= junk_size:
+    #         # how many times the max_file_junk_size fits into the file size
+    #         div = int(file_size / junk_size)
+    #         # the rest which does not fit anymore
+    #         rest = file_size % junk_size
+    #         for i in range(0, div):
+    #             temp_pos = i * junk_size
+    #             # add a -1 => otherwise it will begin where the prev ended
+    #             results.append([temp_pos, temp_pos +
+    #                            (junk_size - 1)])
+    #         # add the rest + 1 because last has the -1
+    #         last = results[len(results) - 1][1]
+    #         results.append([last, last + rest + 1])
+    #     return results
+
+    def _calc_positions(self, file_size):
         results = []
-        junk_size = round(file_size / max_threads + .5)
+        junk_size = io.DEFAULT_BUFFER_SIZE
         if file_size >= junk_size:
-            # how many times the max_file_junk_size fits into the file size
+            # how many times the junk_size fits into the file size
             div = int(file_size / junk_size)
             # the rest which does not fit anymore
             rest = file_size % junk_size
@@ -124,7 +145,3 @@ class FileSearcher:
             last = results[len(results) - 1][1]
             results.append([last, last + rest + 1])
         return results
-
-    def _calc_positions_by_thread_size(self, file_size, thread_size):
-        results = []
-        junks = file_size / thread_size
