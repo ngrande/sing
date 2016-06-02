@@ -10,52 +10,48 @@ from concurrent.futures import ThreadPoolExecutor
 class Searcher:
     def __init__(self, max_concurr_threads=10):
         self.max_concurr_threads = max_concurr_threads
-        self.file_searchers = []
 
-    def search_for_pattern_async(self, directory, pattern):
-        """ search all files in the directory of this object for the pattern.
-        """
-        print('search in directory {0!s} started'.format(directory))
-
+    def _collect_files_to_scan(self, directory, pattern):
+        """ scan the whole directory + subdirectories for fiels """
+        file_searchers = []
         # if directory is actually only a single file
         if os.path.isfile(directory):
-            self._add_file_searcher(directory, pattern)
-            return
+            file_searchers.append(FileSearcher(directory, pattern))
+            return file_searchers
 
         # else scan all files in the directory + subdirectories
         for file_name in os.listdir(directory):
             temp_file_path = directory + '/' + file_name
             if os.path.isdir(temp_file_path):
                 # if file is a directory -> recursive call to itself
-                self.search_for_pattern_async(temp_file_path, pattern)
+                file_searchers.extend(self._collect_files_to_scan(
+                    temp_file_path, pattern))
             else:
-                self._add_file_searcher(temp_file_path, pattern)
+                file_searchers.append(FileSearcher(temp_file_path, pattern))
 
-    # def _search_callback(self, result):
-        # self.thread_count -= 1
-        # self.all_results.extend(result)
+        return file_searchers
 
-    def _add_file_searcher(self, file_path, pattern):
-        file_searcher = FileSearcher(file_path, pattern)
-        self.file_searchers.append(file_searcher)
-
-    def wait_for_results(self):
+    def search_for_pattern(self, directory, pattern):
+        """ starts the search for all files in the directory for the pattern
+        - uses a thread pool (as set in the constructor) """
+        file_searchers = self._collect_files_to_scan(directory, pattern)
         self.all_results = []
-        self.count_left = len(self.file_searchers)
+        print('search started...')
+        # self.count_left = len(self.file_searchers)
         with ThreadPoolExecutor(max_workers=self.
                                 max_concurr_threads) as executor:
-            for searcher in self.file_searchers:
-                executor.submit(self.do_it, searcher)
+            for searcher in file_searchers:
+                executor.submit(self._search_wrapper, searcher)
 
         return self.all_results
 
-    def do_it(self, searcher):
-        self._update_terminal(self.count_left)
-        self.all_results.extend(searcher.
-                                search_in_file(self.max_concurr_threads))
-        self.count_left -= 1
+    def _search_wrapper(self, searcher):
+        """ wraps the FileSearcher search call for the thread-pool """
+        # self._update_terminal(self.count_left)
+        self.all_results.extend(searcher.search_in_file())
+        # self.count_left -= 1
         # print(len(self.all_results))
-        self._update_terminal(self.count_left)
+        # self._update_terminal(self.count_left)
 
     def _update_terminal(self, count_left):
         # nt => Windows (New Technologie)
@@ -65,6 +61,7 @@ class Searcher:
 
 
 class FileSearcher:
+    """ used to search in a single file """
     def __init__(self, file_path, pattern):
         self.file_path = file_path
         self.pattern = pattern.encode('utf-8')
@@ -74,6 +71,7 @@ class FileSearcher:
         self.junk_size = io.DEFAULT_BUFFER_SIZE * 2048
 
     def _search_part_in_file(self, start_pos, end_pos):
+        """ searches a regex pattern in a specified part of a file """
         temp_result = []
         # buffer size = end_pos because so everything that is needed will be
         # read at once
@@ -109,7 +107,9 @@ class FileSearcher:
 
         self.file_results.extend(temp_result)
 
-    def search_in_file(self, max_concurr_threads):
+    def search_in_file(self):
+        """ searches regex pattern in complete file - will create multiple
+            threads (if necessary) to search simultanously in a single file """
         self.file_results = []
         file_size = os.path.getsize(self.file_path)
         positions = self._calc_positions(file_size)  # , max_concurr_threads)
@@ -121,6 +121,8 @@ class FileSearcher:
         return self.file_results
 
     def _calc_positions(self, file_size):
+        """ calculate the position pairs (start + end) for the part to search
+            in the file """
         results = []
 
         if file_size >= self.junk_size:
