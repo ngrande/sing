@@ -65,6 +65,7 @@ class FileSearcher:
     def __init__(self, file_path, pattern):
         self.file_path = file_path
         self.pattern_search = re.compile(pattern.encode('utf-8')).search
+        # self.pattern = pattern.encode('utf-8')
         self.file_results = []
         # junk_size is a multiple of the default buffer size to ensure that it
         # is worth spawning multiple threads for a single file
@@ -101,6 +102,7 @@ class FileSearcher:
                 # bline = file.readline()
                 # curr_pos = file.tell()
                 # binary regex
+                # if self.pattern in bline:
                 match = self.pattern_search(bline)
                 if (match is not None):
                     temp_result.append(bline)
