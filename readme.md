@@ -3,7 +3,7 @@ acronym for **S**ing **i**s **n**ot **g**ood
 
 Sing is an easy to use search tool. You can search all files in a directory and its subdirectories (or just a single file) using regular expressions and save the matching lines in an output file. Useful if you are looking for error messages in many log files.
 
-__High Score*:__ ~__15 Seconds__ to scan __3.5 GB__ of files (8 MiB per file) (Intel i7-2630QM + SanDisk SSD)
+__High Score*:__ ~__10 Seconds__ to scan __3.5 GB__ of files (8 MiB per file) (Intel i7-2630QM + SanDisk SSD)
 
 _*I do not guarantee that one will find everything_
 

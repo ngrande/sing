@@ -3,7 +3,7 @@ import re
 import io
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
+# from concurrent.futures import ThreadPoolExecutor
 
 
 class Searcher:
@@ -32,11 +32,13 @@ class Searcher:
         - uses a thread pool (as set in the constructor) """
         print('search started...')
         processes = []
+        # results = []
         with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as p:
             for searcher in self._generate_file_searchers(directory, pattern):
                 processes.append(p.submit(searcher.search_in_file))
             for async_proc in processes:
                 yield async_proc.result()
+        # return results
 
 
 class FileSearcher:
@@ -49,11 +51,10 @@ class FileSearcher:
         # is worth spawning multiple threads for a single file
         # => One chunk is big enough to be processed within a reasonable time
         # and avoids too much overhead
-        self.chunk_size = io.DEFAULT_BUFFER_SIZE * 8192
+        self.chunk_size = io.DEFAULT_BUFFER_SIZE * 2048
 
     def _search_part_in_file(self, start_pos, end_pos):
         """ searches a regex pattern in a specified part of a file """
-        # temp_result = []
         # buffer_size = end_pos - start_pos + 1
         with open(self.file_path, mode='rb',
                   buffering=self.chunk_size) as file:
@@ -79,14 +80,17 @@ class FileSearcher:
         """ searches regex pattern in complete file - will create multiple
             threads (if necessary) to search simultanously in a single file """
         file_size = os.path.getsize(self.file_path)
-        threads = []
+        # threads = []
         results = []
 
-        with ThreadPoolExecutor() as e:
-            for position in self._calculate_positions(file_size):
-                threads.append(e.submit(self._search_part_in_file, position[0], position[1]))
-            for thread in threads:
-                results.extend(thread.result())
+        # with ThreadPoolExecutor() as e:
+        #     for position in self._calculate_positions(file_size):
+        #       threads.append(e.submit(self._search_part_in_file, position[0],
+        #                                 position[1]))
+        #     for thread in threads:
+        #         results.extend(thread.result())
+        for position in self._calculate_positions(file_size):
+            results.extend(self._search_part_in_file(position[0], position[1]))
         return results
 
     def _calculate_positions(self, file_size):
