@@ -21,3 +21,8 @@ __High Score:__ ~__10 Seconds__ to scan __3.5 GB__ of files (8 MiB per file) (In
 
 ## Help is on the way!
 just type `$python sint -h`
+
+---
+## Todos
+* Improve single file search performance
+* Fix error: BrokenProcessPool
